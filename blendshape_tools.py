@@ -304,40 +304,27 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
         """ Move the vertices of one geo to match the other geo
         This is especially used for loading blendshapes when 'Edit' is enabled in the Shape Editor """
         # get the dag path for the shapeNode using an API selection list
-        selection = om.MSelectionList()
-        dagPath = om.MDagPath()
-        try:
-            selection.add(geoObject)
-            selection.getDagPath(0, dagPath)
-        except: raise
-        
-        selection2 = om.MSelectionList()
-        dagPath2 = om.MDagPath()
-        try:
-            selection2.add(geoTarget)
-            selection2.getDagPath(0, dagPath2)
-        except: raise
+        dagGeo = self.get_dagpath(geoObject)
+        dagTarget = self.get_dagpath(geoTarget)
         
         try:        
             #TODO: Include world/local as space options
             # initialize a geometry iterator for both geos
-            geoIter = om.MItGeometry(dagPath)
-            geoIter2 = om.MItGeometry(dagPath2)
+            geoIter = om.MItGeometry(dagGeo)
+            geoIter2 = om.MItGeometry(dagTarget)
             # get the positions of all the vertices in world space
             pArray = om.MPointArray()
             pArray2 = om.MPointArray()
             geoIter.allPositions(pArray)
             geoIter2.allPositions(pArray2)
-            # just keeping this for reference
-            #pArray[i].x = pArray2[i].x
-            
             # update the surface of the geometry with the changes
             geoIter.setAllPositions(pArray2)
-            meshFn = om.MFnMesh(dagPath)
+            meshFn = om.MFnMesh(dagGeo)
             meshFn.updateSurface()
         except: raise
 
 
+#TODO: Clean up this ridiculous mess. What is the best way to load PySide UIs?
 # Development workaround for PySide winEvent error (Maya 2014)
 # Make sure the UI is deleted before recreating
 try:
