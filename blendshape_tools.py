@@ -6,8 +6,11 @@ Rigmarole Blendshape Tools
 author: Chris Lesage (Rigmarole Studio)
 date: November 2017
 
-A collection of utilities for working
+A collection of utilities for working in Autodesk Maya
 with blendshapes and character rigging workflows.
+
+The [source for Rigmarole Blendshape Tools](https://github.com/chris-lesage/rigmarole-tools) is available on
+GitHub.
 
 I wrote this because Maya's "Flip Blendshape" silently corrupted my geometry
 and I realized I needed some scripts I could trust and fix.
@@ -23,6 +26,7 @@ having to delete the existing target and reload it.
 
 More to come, including:
 * working with weight maps
+* soft selection falloff support
 * multiple splits (not just left/right)
 * splitting on a custom axis
 * undo support
