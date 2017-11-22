@@ -1,6 +1,34 @@
 #!/usr/bin/env mayapy
 # encoding: utf-8
 
+"""
+Rigmarole Blendshape Tools
+author: Chris Lesage (Rigmarole Studio)
+date: November 2017
+
+A collection of utilities for working
+with blendshapes and character rigging workflows.
+
+I wrote this because Maya's "Flip Blendshape" silently corrupted my geometry
+and I realized I needed some scripts I could trust and fix.
+
+1. Split Blendshapes - I had never found a blendshape splitting tool where
+you could control the falloff. Linear falloff usually causes visible seams.
+
+2. Vertex Smash - This just sets the positions of the vertices to match
+a target geo. It is especially useful when you are working in the Shape
+Editor and have "Edit" enabled on a shape. It's a fast convenient way
+to load a modelled shape into a blendshape which already exists without
+having to delete the existing target and reload it.
+
+More to come, including:
+* working with weight maps
+* multiple splits (not just left/right)
+* splitting on a custom axis
+* undo support
+
+"""
+
 __version__ = '0.10'
 #import traceback
 
@@ -24,7 +52,7 @@ except ImportError:
 import pymel.core as pm
 import pymel.core.datatypes as dt
 import maya.cmds as mc
-import maya.OpenMaya as om
+import maya.api.OpenMaya as om
 import maya.OpenMayaUI as omui
 import time
 
@@ -105,7 +133,7 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
 
     def create_ui(self):
         """Create the UI"""
-        self.setWindowTitle('Title Here v' + __version__)
+        self.setWindowTitle('Rigmarole Blendshape Tools v' + __version__)
         self.resize(280, 160)
         self.setWindowFlags(QtCore.Qt.Tool)
         self.create_controls()
@@ -222,13 +250,14 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
 
     def get_dagpath(self, geo):
         # get the dag path for the shapeNode using an API selection list
-        selectionLeft = om.MSelectionList()
+        selection = om.MSelectionList()
         dagPath = om.MDagPath()
         try:
-            selectionLeft.add(geo)
-            selectionLeft.getDagPath(0, dagPath)
+            selection.add(geo.name())
+            dagPath = selection.getDagPath(0)
         except: raise
         return dagPath
+        
         
     @timer
     def split_blendshapes(self, geoSplitLeft, geoSplitRight, geoSculpt, geoNeutral, width, degree):
@@ -249,28 +278,24 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
         # THE NEUTRAL BASE SHAPE
         dagPath2 = self.get_dagpath(geoNeutral)
         
+        #TODO: Add space as an option
+        space = om.MSpace.kObject
         try:        
             # initialize a geometry iterator for the geos
-            geoIterLeft = om.MItGeometry(dagPathLeft)
-            geoIterRight = om.MItGeometry(dagPathRight)
-            geoIter1 = om.MItGeometry(dagPath1)
-            geoIter2 = om.MItGeometry(dagPath2)
-            # get the positions of all the vertices in world space
-            pArrayLeft = om.MPointArray()
-            pArrayRight = om.MPointArray()
-            pArray1 = om.MPointArray()
-            pArray2 = om.MPointArray()
+            geoIterLeft = om.MFnMesh(dagPathLeft)
+            geoIterRight = om.MFnMesh(dagPathRight)
+            geoIter1 = om.MFnMesh(dagPath1)
+            geoIter2 = om.MFnMesh(dagPath2)
 
-            #TODO: Add space as an option
-            space = om.MSpace.kObject
-            geoIterLeft.allPositions(pArrayLeft, space) # the split.
-            geoIterRight.allPositions(pArrayRight, space) # the split.
-            geoIter1.allPositions(pArray1, space) # the sculpt
-            geoIter2.allPositions(pArray2, space) # the neutral base
-            
+            # get the positions of all the vertices in chosen space
+            pArrayLeft = geoIterLeft.getPoints(space)
+            pArrayRight = geoIterRight.getPoints(space)
+            pArray1 = geoIter1.getPoints(space)
+            pArray2 = geoIter2.getPoints(space)
+
             width += 0.0001 # protect from division by zero
             # iterate over one of the neutral geometries to get clean xpos readings.
-            for i in xrange(pArrayLeft.length()):
+            for i in xrange(geoIterLeft.numVertices):
                 # this bit normalizes the x position relative to the width.
                 # Anything below width will be 0.0. Anything above will be 1.0
                 # Anything between the width will blend with the chosen easeInOut curve.
@@ -290,12 +315,10 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
                 pArrayRight[i].z = rightVector.z
             
             # update the surface of the geometry with the changes
-            geoIterLeft.setAllPositions(pArrayLeft)
-            geoIterRight.setAllPositions(pArrayRight)
-            meshFn = om.MFnMesh(dagPathLeft)
-            meshFn.updateSurface()
-            meshFn = om.MFnMesh(dagPathRight)
-            meshFn.updateSurface()
+            geoIterLeft.setPoints(pArrayLeft)
+            geoIterRight.setPoints(pArrayRight)
+            geoIterLeft.updateSurface()
+            geoIterRight.updateSurface()
         except: raise
 
 
@@ -304,23 +327,21 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
         """ Move the vertices of one geo to match the other geo
         This is especially used for loading blendshapes when 'Edit' is enabled in the Shape Editor """
         # get the dag path for the shapeNode using an API selection list
-        dagGeo = self.get_dagpath(geoObject)
-        dagTarget = self.get_dagpath(geoTarget)
+        dagPath = self.get_dagpath(geoObject)
+        dagPath2 = self.get_dagpath(geoTarget)
+
+        space = om.MSpace.kObject
         
         try:        
             #TODO: Include world/local as space options
             # initialize a geometry iterator for both geos
-            geoIter = om.MItGeometry(dagGeo)
-            geoIter2 = om.MItGeometry(dagTarget)
+            geoIter = om.MFnMesh(dagPath)
+            geoIter2 = om.MFnMesh(dagPath2)
             # get the positions of all the vertices in world space
-            pArray = om.MPointArray()
-            pArray2 = om.MPointArray()
-            geoIter.allPositions(pArray)
-            geoIter2.allPositions(pArray2)
+            pArray2 = geoIter2.getPoints(space)
             # update the surface of the geometry with the changes
-            geoIter.setAllPositions(pArray2)
-            meshFn = om.MFnMesh(dagGeo)
-            meshFn.updateSurface()
+            geoIter.setPoints(pArray2)
+            geoIter.updateSurface()
         except: raise
 
 
