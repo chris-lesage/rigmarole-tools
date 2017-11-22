@@ -1,6 +1,7 @@
 # Rigmarole Blendshape Tools
 
 author: Chris Lesage (Rigmarole Studio)
+
 date: November 2017
 
 A collection of utilities for working in Autodesk Maya
