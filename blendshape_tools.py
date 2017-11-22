@@ -34,24 +34,7 @@ More to come, including:
 """
 
 __version__ = '0.10'
-#import traceback
-
-#TODO: Check out that shim thing someone published on Github
-try:
-    import PySide2.QtCore as QtCore
-    import PySide2.QtGui as QtGui
-    import PySide2.QtWidgets as QtWidgets
-except ImportError:
-    print("failed to import PySide2, {}".format(__file__))
-    import PySide.QtCore as QtCore
-    import PySide.QtGui as QtGui
-    import PySide.QtWidgets as QtWidgets
-
-try:
-    # future proofing for Maya 2017.
-    from shiboken2 import wrapInstance
-except ImportError:
-    from shiboken import wrapInstance
+import traceback
 
 import pymel.core as pm
 import pymel.core.datatypes as dt
@@ -94,7 +77,7 @@ def timer(func):
             timeStop = time.clock()
             print('{} execution time: {} seconds.'.format(func.__name__, timeStop-timeStart))
     return _timerfunc
-            
+
 
 # easing functions from Robert Penner
 def linearTween(t, b, c, d):
@@ -121,15 +104,19 @@ def maya_main_window():
     return wrapInstance(long(main_window_ptr), QtWidgets.QWidget)
 
 
-class RigmaroleBlendshapeTools(QtWidgets.QDialog):
-    def __init__(self, parent=maya_main_window()):
-        super(RigmaroleBlendshapeTools, self).__init__(parent)
+class RigmaroleBlendshapeTools(object):
+    def __init__(self):
+        self.title = 'Rigmarole Blendshape Tools'
+        self.name = self.title.lower().replace(' ', '_')
+        self.version = __version__
+        self.splitBlendDegree = 4
         self.easeFunctions = {
             1: linearTween,
             2: easeInOutCubic, # 2 not implemented. Same as 3.
             3: easeInOutCubic,
             4: easeInOutQuad,
             }
+        self.create_ui()
 
     ##################################
     ###### PySide UI Functions #######
@@ -137,81 +124,62 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
 
     def create_ui(self):
         """Create the UI"""
-        self.setWindowTitle('Rigmarole Blendshape Tools v' + __version__)
-        self.resize(280, 160)
-        self.setWindowFlags(QtCore.Qt.Tool)
-        self.create_controls()
-        self.create_layout()
+        if pm.window(self.name, q=True, exists=True):
+            pm.deleteUI(self.name)
 
-    def create_controls(self):
-        """Create the widgets and signals for the dialog"""
+        with pm.window(self.name, title='{} v{}'.format(self.title, self.version), menuBar=True) as win:
+            with pm.verticalLayout() as mainLayout:
+                with pm.horizontalLayout() as easeButtons:
+                    # A collection of radio buttons to choose which degree of blending to use.
+                    easeColl = pm.iconTextRadioCollection( 'itRadCollection' )
+                    ease1 = pm.iconTextRadioButton(
+                            st='iconAndTextHorizontal',
+                            i1='cone.xpm',
+                            label='linear 1',
+                            onCommand=pm.Callback(self.set_blend_degree, 1),
+                            )
+                    ease3 = pm.iconTextRadioButton(
+                            st='iconAndTextHorizontal',
+                            i1='cone.xpm',
+                            label='cubic 3',
+                            onCommand=pm.Callback(self.set_blend_degree, 3),
+                            )
+                    ease4 = pm.iconTextRadioButton(
+                            st='iconAndTextHorizontal',
+                            i1='cone.xpm',
+                            label='quadratic 4',
+                            onCommand=pm.Callback(self.set_blend_degree, 4),
+                            sl=True,
+                            )
 
-        cRed    = '745a54'
-        cBlue   = '5d5d6a'
-        cGreen  = '597a59'
-        borderStyle = 'border:1px solid #3a3a3a'
-
-        self.addButtons = {}
-        eachButton = 'Split Blendshapes'
-        #TODO Set up a button construction function
-        self.addButtons[eachButton] = QtWidgets.QPushButton('{} Button'.format(eachButton))
-        self.addButtons[eachButton].clicked.connect(self.template_btn(eachButton, self.split_blendshapes_btn))
-        self.addButtons[eachButton].setStyleSheet(
-                '{}; padding:5px; max-width:180px;\
-                background-color: #{}; color: #eee;'.format(borderStyle, cBlue))
-
-        eachButton = 'Vertex Smash'
-        self.addButtons[eachButton] = QtWidgets.QPushButton('{} Button'.format(eachButton))
-        self.addButtons[eachButton].clicked.connect(self.template_btn(eachButton, self.vertex_smash_btn))
-        self.addButtons[eachButton].setStyleSheet(
-                '{}; padding:5px; max-width:180px;\
-                background-color: #{}; color: #eee;'.format(borderStyle, cBlue))
-
-    def create_layout(self):
-        """Create the layouts and add widgets"""
-
-        mainLayout = QtWidgets.QVBoxLayout()
-        mainLayout.setContentsMargins(*[6]*4)
-
-        flatStyle = True  # False draws a border around the whole section
-        groupFont = QtGui.QFont('Helvetica Neue', 10, QtGui.QFont.Bold)
-        labelFont=QtGui.QFont()
-        #labelFont.setBold(True)
-        groupPadding = 4  # padding at top and bottom of each section
-        groupSpacing = 4  # the space between each section
-
-        guideGroup = QtWidgets.QGroupBox('Group Title Here')
-        guideGroup.setFlat(flatStyle)
-        guideGroup.setFont(groupFont)
-
-        buttonLayout = QtWidgets.QVBoxLayout()
-        buttonLayout.setAlignment(QtCore.Qt.AlignLeft)
-        buttonLayout.setAlignment(QtCore.Qt.AlignBottom)
-        buttonLayout.setContentsMargins(*[2]*4)
-
-        for eachButton in self.addButtons.values():
-            buttonLayout.addWidget(eachButton)
-        guideGroup.setLayout(buttonLayout)
-
-        mainLayout.addWidget(guideGroup)
-        mainLayout.addSpacing(groupSpacing)
-        mainLayout.addStretch()
-
-        self.setLayout(mainLayout)
+                with pm.horizontalLayout() as neutralLayout:
+                    neutralField = pm.textFieldGrp(label='Neutral Geometry:', columnWidth=[2, 300])
+                    neutralLoad = pm.button(label='Load Selected')
+                    shapeOrigLoad = pm.button(label='Choose ShapeOrig')
+                neutralLayout.redistribute(80, 10, 10)
+                btn = pm.button(
+                    label='Split Blendshapes',
+                    command=pm.Callback(self.template_btn, 'split', self.split_blendshapes_btn),
+                    )
+                btn = pm.button(
+                    label='Vertex Smash',
+                    command=pm.Callback(self.template_btn, 'vertex smash', self.vertex_smash_btn),
+                    )
+            mainLayout.redistribute(20, 20, 20, 20)
+        pm.showWindow()
 
 
     #--------------------------------------------------------------------------
     # SLOTS
     #--------------------------------------------------------------------------
 
+    def set_blend_degree(self, degree):
+        self.splitBlendDegree = degree
+        print('degree: {}'.format(degree))
+
     def template_btn(self, message, func):
-        # def do() a tip from Mattias so I don't have to use lambda to pass
-        # arguments to a button signal. But I don't know why it works.
-        def do():
-            sender = self.sender()
-            #print(message)
-            func()
-        return do
+        #print(message)
+        func()
 
     def vertex_smash_btn(self):
         # First select the geo you want to match, then select the geo you want to change.
@@ -235,10 +203,11 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
         rightSplit.setTranslation(sculpted.getTranslation())
         leftSplit.v.set(1)
         rightSplit.v.set(1)
-        self.split_blendshapes(leftSplit, rightSplit, sculpted, neutral, width, 4)
+        degree = self.splitBlendDegree
+        self.split_blendshapes(leftSplit, rightSplit, sculpted, neutral, width, degree)
         leftSplit.tx.set(12)
         rightSplit.tx.set(-12)
-        
+
 
     #################################
     ####### Rigging Functions #######
@@ -261,8 +230,8 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
             dagPath = selection.getDagPath(0)
         except: raise
         return dagPath
-        
-        
+
+
     @timer
     def split_blendshapes(self, geoSplitLeft, geoSplitRight, geoSculpt, geoNeutral, width, degree):
         """ Take a deformed mesh a neutral mesh and create a left and right split for blendshape creation.
@@ -272,7 +241,7 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
         #TODO: Auto set up a test blendshape so you can scrub and test the result quickly.
 
         easeFunction = self.easeFunctions[degree]
-        
+
         # THE SPLIT RESULT LEFT
         dagPathLeft = self.get_dagpath(geoSplitLeft)
         # THE SPLIT RESULT RIGHT
@@ -281,10 +250,10 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
         dagPath1 = self.get_dagpath(geoSculpt)
         # THE NEUTRAL BASE SHAPE
         dagPath2 = self.get_dagpath(geoNeutral)
-        
+
         #TODO: Add space as an option
         space = om.MSpace.kObject
-        try:        
+        try:
             # initialize a geometry iterator for the geos
             geoIterLeft = om.MFnMesh(dagPathLeft)
             geoIterRight = om.MFnMesh(dagPathRight)
@@ -317,7 +286,7 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
                 pArrayRight[i].x = rightVector.x
                 pArrayRight[i].y = rightVector.y
                 pArrayRight[i].z = rightVector.z
-            
+
             # update the surface of the geometry with the changes
             geoIterLeft.setPoints(pArrayLeft)
             geoIterRight.setPoints(pArrayRight)
@@ -335,8 +304,8 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
         dagPath2 = self.get_dagpath(geoTarget)
 
         space = om.MSpace.kObject
-        
-        try:        
+
+        try:
             #TODO: Include world/local as space options
             # initialize a geometry iterator for both geos
             geoIter = om.MFnMesh(dagPath)
@@ -349,22 +318,5 @@ class RigmaroleBlendshapeTools(QtWidgets.QDialog):
         except: raise
 
 
-#TODO: Clean up this ridiculous mess. What is the best way to load PySide UIs?
-# Development workaround for PySide winEvent error (Maya 2014)
-# Make sure the UI is deleted before recreating
-try:
-    blendshape_tools
-    blendshape_tools.deleteLater()
-except NameError:
-    pass
-
 # Create UI object
 blendshape_tools = RigmaroleBlendshapeTools()
-
-# Delete the UI if errors occur to avoid causing winEvent and event errors
-try:
-    blendshape_tools.create_ui()
-    blendshape_tools.show()
-except:
-    traceback.print_exc()
-    blendshape_tools.deleteLater()
