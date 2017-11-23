@@ -4,7 +4,7 @@
 """
 Rigmarole Blendshape Tools
 author: Chris Lesage (Rigmarole Studio)
-date: November 2017
+date: December 2017
 
 A collection of utilities for working in Autodesk Maya
 with blendshapes and character rigging workflows.
@@ -41,6 +41,7 @@ import pymel.core.datatypes as dt
 import maya.cmds as mc
 import maya.api.OpenMaya as om
 import maya.OpenMayaUI as omui
+import json
 import time
 
 from functools import wraps
@@ -109,15 +110,34 @@ class RigmaroleBlendshapeTools(object):
         self.title = 'Rigmarole Blendshape Tools'
         self.name = self.title.lower().replace(' ', '_')
         self.version = __version__
-        self.splitBlendDegree = 4
+        
         self.easeFunctions = {
             1: linearTween,
             2: easeInOutCubic, # 2 not implemented. Same as 3.
             3: easeInOutCubic,
             4: easeInOutQuad,
             }
-        self.create_ui()
 
+        self.create_options()
+        self.create_ui()
+    
+    def create_options(self):
+        # create a node to hold option attributes in your scene.
+        # An optionVar would try to remember settings between different scenes.
+        # Attributes will remain even when you come back to a rig later.
+        if pm.objExists('rigmarole_blendshape_tools'):
+            self.optionsNode = pm.PyNode('rigmarole_blendshape_tools')
+        else:
+            self.optionsNode = pm.group(em=True, n='rigmarole_blendshape_tools')
+        #TODO: Set up a serializer to set and get the options dictionary on the optionsNode
+        self.options = {}
+        self.options['splitBlendDegree'] = 4
+        self.options['neutralGeo'] = None
+        self.options['geoToSplit'] = []
+        self.options['smashGeo'] = []
+        self.options['numberOfSplits'] = 1
+        
+    
     ##################################
     ###### PySide UI Functions #######
     ##################################
@@ -129,12 +149,15 @@ class RigmaroleBlendshapeTools(object):
 
         with pm.window(self.name, title='{} v{}'.format(self.title, self.version), menuBar=True) as win:
             with pm.verticalLayout() as mainLayout:
+                
+                pm.text(label='Split Blendshapes')
+
                 with pm.horizontalLayout() as easeButtons:
                     # A collection of radio buttons to choose which degree of blending to use.
                     easeColl = pm.iconTextRadioCollection( 'itRadCollection' )
                     ease1 = pm.iconTextRadioButton(
                             st='iconAndTextHorizontal',
-                            i1='cone.xpm',
+                            i1='linearCurveProfile.png',
                             label='linear 1',
                             onCommand=pm.Callback(self.set_blend_degree, 1),
                             )
@@ -153,19 +176,55 @@ class RigmaroleBlendshapeTools(object):
                             )
 
                 with pm.horizontalLayout() as neutralLayout:
-                    neutralField = pm.textFieldGrp(label='Neutral Geometry:', columnWidth=[2, 300])
-                    neutralLoad = pm.button(label='Load Selected')
+                    label = pm.text(label='Neutral Geometry:')
+                    neutralField = pm.textField()
+                    neutralLoad = pm.button(
+                        label='Select Neutral Geo',
+                        command=pm.Callback(self.load_neutral_geo, neutralField),
+                        )
                     shapeOrigLoad = pm.button(label='Choose ShapeOrig')
-                neutralLayout.redistribute(80, 10, 10)
+                neutralLayout.redistribute(10, 30, 10, 10)
+
+                with pm.horizontalLayout() as geoToSplitLayout:
+                    label = pm.text(label='Geometry to Split:')
+                    splitField = pm.textField()
+                    neutralLoad = pm.button(
+                        label='Select Split Geo',
+                        command=pm.Callback(self.load_blendshapes_to_split, splitField),
+                        )
+                geoToSplitLayout.redistribute(10, 40, 10)
+
+                with pm.horizontalLayout() as numberOfSplitsLayout:
+                    label = pm.text(label='Number of splits')
+                    numSplitsField = pm.intField(value=1, minValue=1, maxValue=200, changeCommand=pm.Callback(self.change_splits))
+                    neutralLoad = pm.button(
+                        label='Create Split Helpers',
+                        command=pm.Callback(self.create_split_helpers),
+                        )
+                numberOfSplitsLayout.redistribute(10, 40, 10)
+
                 btn = pm.button(
                     label='Split Blendshapes',
                     command=pm.Callback(self.template_btn, 'split', self.split_blendshapes_btn),
                     )
-                btn = pm.button(
-                    label='Vertex Smash',
-                    command=pm.Callback(self.template_btn, 'vertex smash', self.vertex_smash_btn),
-                    )
-            mainLayout.redistribute(20, 20, 20, 20)
+
+                pm.text(label='Vertex Smash')
+
+                with pm.horizontalLayout() as smashLayout:
+                    label = pm.text('Geometry to change:')
+                    smashField = pm.textField()
+                    #TODO: Allow user to edit this field with text, and validate the input for existing geo.
+                    chooseBtn = pm.button(
+                        label='Choose Geo',
+                        command=pm.Callback(self.choose_smash, smashField),
+                        )
+                    btn = pm.button(
+                        label='Vertex Smash',
+                        command=pm.Callback(self.template_btn, 'vertex smash', self.vertex_smash_btn),
+                        )
+                smashLayout.redistribute(10, 30, 10, 10)
+
+            mainLayout.redistribute(40, 20, 20, 20, 20, 20, 40, 20)
         pm.showWindow()
 
 
@@ -173,8 +232,37 @@ class RigmaroleBlendshapeTools(object):
     # SLOTS
     #--------------------------------------------------------------------------
 
+    def choose_smash(self, smashField):
+        if pm.selected():
+            smashField.setText(pm.selected()[0].name())
+            self.options['smashGeo'] = pm.selected()[0]
+        else:
+            pm.warning('Please select geometry you wish to vertex smash.')
+        
+
+    def load_neutral_geo(self, neutralField):
+        if pm.selected():
+            neutralField.setText(pm.selected()[0].name())
+            self.options['neutralGeo'] = pm.selected()[0]
+        else:
+            pm.warning('Please select geometry to use as neutral')
+   
+    def load_blendshapes_to_split(self, splitField):
+        if pm.selected():
+            splitField.setText(', '.join([x.name() for x in pm.selected()]))
+            self.options['geoToSplit'] = pm.selected()
+        else:
+            pm.warning('Please select geometry to use as neutral')
+
+    def change_splits(self, numSplitsField):
+        self.options['numberOfSplits'] = numSplitsField.getValue()
+
+    def create_split_helpers(self):
+        numSplits = self.options['numberOfSplits']
+        print('#TODO: Create locators with {} splits'.format(numSplits))
+   
     def set_blend_degree(self, degree):
-        self.splitBlendDegree = degree
+        self.options['splitBlendDegree'] = degree
         print('degree: {}'.format(degree))
 
     def template_btn(self, message, func):
@@ -183,30 +271,50 @@ class RigmaroleBlendshapeTools(object):
 
     def vertex_smash_btn(self):
         # First select the geo you want to match, then select the geo you want to change.
-        target, geo = pm.selected()[0:2]
+        geo = self.options['smashGeo']
+        #TODO: Implement support for component and soft selections
+        target = pm.selected()[0]
         self.vertex_smash(geo, target)
 
     def split_blendshapes_btn(self):
         #TODO: Set all of these options in the GUI or by selection
         #TODO: Add a way to interact with this by script too. Not just GUI.
-        # create a sphere and add noise
-        pm.delete(pm.ls('ZZZ_OUTPUT*'))
+
+        if self.options['neutralGeo']:
+            neutral = self.options['neutralGeo']
+        else:
+            pm.warning('First select a neutral geometry')
+            return False
+
+        #TODO: Set up some more checks to make sure topology of current selection matches neutral geo
+        #TODO: Collect all warnings together instead of individual errors. Let the user know everything they are missing.
+        #TODO: Support multiple selections? Might need multiple neutral geo. Imagine eyebrows, eyelashes, etc. It would be tedious to select each neutral separately. OR have a pair-matched list?
+        geoToSplit = self.options['geoToSplit']
+        if not geoToSplit:
+            pm.warning('Select geometry to be split')
+            return False
+        else:
+            for eachSplit in geoToSplit:
+                if len(eachSplit.vtx) != len(neutral.vtx):
+                    pm.warning('The topology between {} and your shape do not seem to match.'.format(eachSplit.name()))
+                    return False
+
+        neutralBB = neutral.getBoundingBox()
 
         #TODO: Set up a width_indicator rig widget to visualize how things will split.
         width = abs(pm.PyNode('width_indicator').tx.get())
-        sculpted = pm.PyNode('sphere_deformed')
-        neutral = pm.PyNode('sphere_neutral')
-
-        leftSplit = pm.duplicate(neutral, n='ZZZ_OUTPUT_blendshape_Left')[0]
-        rightSplit = pm.duplicate(neutral, n='ZZZ_OUTPUT_blendshape_Right')[0]
-        leftSplit.setTranslation(sculpted.getTranslation())
-        rightSplit.setTranslation(sculpted.getTranslation())
-        leftSplit.v.set(1)
-        rightSplit.v.set(1)
-        degree = self.splitBlendDegree
-        self.split_blendshapes(leftSplit, rightSplit, sculpted, neutral, width, degree)
-        leftSplit.tx.set(12)
-        rightSplit.tx.set(-12)
+        
+        pm.delete(pm.ls('ZZZ_OUTPUT*'))
+        for i, eachSplit in enumerate(geoToSplit):
+            #TODO: Add a scheme which creates temporary shapes. Then, once you are happy with the result you "commit" and it names them properly for you. This way you can test, iterate and then keep your changes and do the next split. But before you commit, the script keeps deleting the temp shapes.
+            leftResult = pm.duplicate(neutral, n='ZZZ_OUTPUT_{}_Left'.format(eachSplit.name()))[0]
+            rightResult = pm.duplicate(neutral, n='ZZZ_OUTPUT_{}_Right'.format(eachSplit.name()))[0]
+            leftResult.setTranslation(eachSplit.getTranslation())
+            rightResult.setTranslation(eachSplit.getTranslation())
+            degree = self.options['splitBlendDegree']
+            self.split_blendshapes(leftResult, rightResult, eachSplit, neutral, width, degree)
+            leftResult.tx.set(neutralBB.width() * 1.2)
+            rightResult.tx.set(neutralBB.width() * -1.2)
 
 
     #################################
