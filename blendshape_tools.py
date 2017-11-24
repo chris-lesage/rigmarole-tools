@@ -33,7 +33,7 @@ More to come, including:
 
 """
 
-__version__ = '0.10'
+__version__ = '0.12'
 import traceback
 
 import pymel.core as pm
@@ -130,6 +130,7 @@ class RigmaroleBlendshapeTools(object):
         else:
             self.optionsNode = pm.group(em=True, n='rigmarole_blendshape_tools')
         #TODO: Set up a serializer to set and get the options dictionary on the optionsNode
+        self.buttons = {}
         self.options = {}
         self.options['splitBlendDegree'] = 4
         self.options['neutralGeo'] = None
@@ -150,7 +151,9 @@ class RigmaroleBlendshapeTools(object):
         with pm.window(self.name, title='{} v{}'.format(self.title, self.version), menuBar=True) as win:
             with pm.verticalLayout() as mainLayout:
                 
+                pm.separator()
                 pm.text(label='Split Blendshapes')
+                pm.separator()
 
                 with pm.horizontalLayout() as easeButtons:
                     # A collection of radio buttons to choose which degree of blending to use.
@@ -174,57 +177,63 @@ class RigmaroleBlendshapeTools(object):
                             onCommand=pm.Callback(self.set_blend_degree, 4),
                             sl=True,
                             )
+                pm.separator()
 
                 with pm.horizontalLayout() as neutralLayout:
-                    label = pm.text(label='Neutral Geometry:')
-                    neutralField = pm.textField()
                     neutralLoad = pm.button(
                         label='Select Neutral Geo',
-                        command=pm.Callback(self.load_neutral_geo, neutralField),
+                        command=pm.Callback(self.load_neutral_geo),
                         )
-                    shapeOrigLoad = pm.button(label='Choose ShapeOrig')
-                neutralLayout.redistribute(10, 30, 10, 10)
+                    self.buttons['neutralField'] = pm.textField()
+                    #shapeOrigLoad = pm.button(label='Choose ShapeOrig')
+                neutralLayout.redistribute(10, 50)
 
                 with pm.horizontalLayout() as geoToSplitLayout:
-                    label = pm.text(label='Geometry to Split:')
-                    splitField = pm.textField()
                     neutralLoad = pm.button(
                         label='Select Split Geo',
-                        command=pm.Callback(self.load_blendshapes_to_split, splitField),
+                        command=pm.Callback(self.load_blendshapes_to_split),
                         )
-                geoToSplitLayout.redistribute(10, 40, 10)
+                    self.buttons['splitField'] = pm.textField()
+                geoToSplitLayout.redistribute(10, 50)
 
                 with pm.horizontalLayout() as numberOfSplitsLayout:
                     label = pm.text(label='Number of splits')
-                    numSplitsField = pm.intField(value=1, minValue=1, maxValue=200, changeCommand=pm.Callback(self.change_splits))
+                    self.buttons['numberOfSplits'] = pm.intField(
+                        value=1,
+                        changeCommand=pm.Callback(self.change_splits),
+                        )
+                    self.buttons['numSplitsSlider'] = pm.intSlider(value=1, minValue=1, maxValue=8,
+                        changeCommand=pm.Callback(self.change_splits_slider),
+                        )
                     neutralLoad = pm.button(
                         label='Create Split Helpers',
                         command=pm.Callback(self.create_split_helpers),
                         )
-                numberOfSplitsLayout.redistribute(10, 40, 10)
+                numberOfSplitsLayout.redistribute(10, 5, 35, 10)
 
                 btn = pm.button(
                     label='Split Blendshapes',
                     command=pm.Callback(self.template_btn, 'split', self.split_blendshapes_btn),
                     )
 
+                pm.separator()
                 pm.text(label='Vertex Smash')
+                pm.separator()
 
                 with pm.horizontalLayout() as smashLayout:
-                    label = pm.text('Geometry to change:')
-                    smashField = pm.textField()
-                    #TODO: Allow user to edit this field with text, and validate the input for existing geo.
                     chooseBtn = pm.button(
-                        label='Choose Geo',
-                        command=pm.Callback(self.choose_smash, smashField),
+                        label='Choose Geo to Change:',
+                        command=pm.Callback(self.choose_smash),
                         )
+                    self.buttons['smashField'] = pm.textField()
+                    #TODO: Allow user to edit this field with text, and validate the input for existing geo.
                     btn = pm.button(
                         label='Vertex Smash',
                         command=pm.Callback(self.template_btn, 'vertex smash', self.vertex_smash_btn),
                         )
-                smashLayout.redistribute(10, 30, 10, 10)
+                smashLayout.redistribute(10, 40, 10)
 
-            mainLayout.redistribute(40, 20, 20, 20, 20, 20, 40, 20)
+            mainLayout.redistribute(10, 10, 10, 10, 20, 20, 20, 20, 20, 10, 10, 10, 20)
         pm.showWindow()
 
 
@@ -232,7 +241,8 @@ class RigmaroleBlendshapeTools(object):
     # SLOTS
     #--------------------------------------------------------------------------
 
-    def choose_smash(self, smashField):
+    def choose_smash(self):
+        smashField = self.buttons['smashField']
         if pm.selected():
             smashField.setText(pm.selected()[0].name())
             self.options['smashGeo'] = pm.selected()[0]
@@ -240,21 +250,32 @@ class RigmaroleBlendshapeTools(object):
             pm.warning('Please select geometry you wish to vertex smash.')
         
 
-    def load_neutral_geo(self, neutralField):
+    def load_neutral_geo(self):
+        neutralField = self.buttons['neutralField']
         if pm.selected():
             neutralField.setText(pm.selected()[0].name())
             self.options['neutralGeo'] = pm.selected()[0]
         else:
             pm.warning('Please select geometry to use as neutral')
    
-    def load_blendshapes_to_split(self, splitField):
+    def load_blendshapes_to_split(self):
+        splitField = self.buttons['splitField']
         if pm.selected():
             splitField.setText(', '.join([x.name() for x in pm.selected()]))
             self.options['geoToSplit'] = pm.selected()
         else:
             pm.warning('Please select geometry to use as neutral')
 
-    def change_splits(self, numSplitsField):
+    def change_splits_slider(self):
+        numSplitsSlider = self.buttons['numSplitsSlider']
+        numSplitsField = self.buttons['numberOfSplits']
+        print(numSplitsSlider.getValue())
+        numSplitsField.setValue(numSplitsSlider.getValue())
+        self.options['numberOfSplits'] = numSplitsSlider.getValue()
+
+    def change_splits(self):
+        numSplitsSlider = self.buttons['numSplitsSlider']
+        numSplitsField = self.buttons['numberOfSplits']
         self.options['numberOfSplits'] = numSplitsField.getValue()
 
     def create_split_helpers(self):
