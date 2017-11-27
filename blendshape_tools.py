@@ -25,20 +25,21 @@ to load a modelled shape into a blendshape which already exists without
 having to delete the existing target and reload it.
 
 More to come, including:
-* working with weight maps
 * soft selection falloff support
 * multiple splits (not just left/right)
 * splitting on a custom axis
 * undo support
+* working with weight maps
 
 """
 
-__version__ = '0.12'
+__version__ = '0.14'
 import traceback
 
 import pymel.core as pm
 import pymel.core.datatypes as dt
 import maya.cmds as mc
+import maya.OpenMaya as omo # Open Maya Old
 import maya.api.OpenMaya as om
 import maya.OpenMayaUI as omui
 import json
@@ -216,6 +217,11 @@ class RigmaroleBlendshapeTools(object):
                     command=pm.Callback(self.template_btn, 'split', self.split_blendshapes_btn),
                     )
 
+                btn = pm.button(
+                    label='Split Blendshapes By Soft Selection',
+                    command=pm.Callback(self.template_btn, 'split', self.split_blendshapes_by_selection_btn),
+                    )
+
                 pm.separator()
                 pm.text(label='Vertex Smash')
                 pm.separator()
@@ -233,7 +239,7 @@ class RigmaroleBlendshapeTools(object):
                         )
                 smashLayout.redistribute(10, 40, 10)
 
-            mainLayout.redistribute(10, 10, 10, 10, 20, 20, 20, 20, 20, 10, 10, 10, 20)
+            mainLayout.redistribute(10, 10, 10, 10, 20, 20, 20, 20, 20, 20, 10, 10, 10, 20)
         pm.showWindow()
 
 
@@ -297,6 +303,34 @@ class RigmaroleBlendshapeTools(object):
         target = pm.selected()[0]
         self.vertex_smash(geo, target)
 
+    def split_blendshapes_by_selection_btn(self):
+        #TODO: Set all of these options in the GUI or by selection
+        #TODO: Add a way to interact with this by script too. Not just GUI.
+
+        if self.options['neutralGeo']:
+            neutral = self.options['neutralGeo']
+        else:
+            pm.warning('First select a neutral geometry')
+            return False
+
+        neutralBB = neutral.getBoundingBox()
+        geoToSplit = pm.PyNode(self.find_node_by_component(pm.selected())).getTransform()
+
+        pm.delete(pm.ls('ZZZ_OUTPUT*'))
+        positiveResult = pm.duplicate(neutral, n='ZZZ_OUTPUT_{}_Positive'.format(geoToSplit.name()))[0]
+        negativeResult = pm.duplicate(neutral, n='ZZZ_OUTPUT_{}_Negative'.format(geoToSplit.name()))[0]
+        # unlock translate. Common use is to duplicate a geo who is skinned and blendshaped.
+        for eachGeo in [positiveResult, negativeResult]:
+            eachGeo.tx.unlock()
+            eachGeo.ty.unlock()
+            eachGeo.tz.unlock()
+        positiveResult.setTranslation(geoToSplit.getTranslation())
+        negativeResult.setTranslation(geoToSplit.getTranslation())
+        self.split_blendshapes_by_selection(positiveResult, negativeResult, geoToSplit, neutral)
+        positiveResult.tx.set(neutralBB.width() * 1.2)
+        negativeResult.tx.set(neutralBB.width() * -1.2)
+
+
     def split_blendshapes_btn(self):
         #TODO: Set all of these options in the GUI or by selection
         #TODO: Add a way to interact with this by script too. Not just GUI.
@@ -323,7 +357,8 @@ class RigmaroleBlendshapeTools(object):
         neutralBB = neutral.getBoundingBox()
 
         #TODO: Set up a width_indicator rig widget to visualize how things will split.
-        width = abs(pm.PyNode('width_indicator').tx.get())
+        center = pm.PyNode('center_indicator').tx.get()
+        width = abs(pm.PyNode('width_indicator').tx.get() - center)
         
         pm.delete(pm.ls('ZZZ_OUTPUT*'))
         for i, eachSplit in enumerate(geoToSplit):
@@ -333,7 +368,7 @@ class RigmaroleBlendshapeTools(object):
             leftResult.setTranslation(eachSplit.getTranslation())
             rightResult.setTranslation(eachSplit.getTranslation())
             degree = self.options['splitBlendDegree']
-            self.split_blendshapes(leftResult, rightResult, eachSplit, neutral, width, degree)
+            self.split_blendshapes(leftResult, rightResult, eachSplit, neutral, center, width, degree)
             leftResult.tx.set(neutralBB.width() * 1.2)
             rightResult.tx.set(neutralBB.width() * -1.2)
 
@@ -354,15 +389,102 @@ class RigmaroleBlendshapeTools(object):
         # get the dag path for the shapeNode using an API selection list
         selection = om.MSelectionList()
         dagPath = om.MDagPath()
-        try:
-            selection.add(geo.name())
-            dagPath = selection.getDagPath(0)
-        except: raise
+        selection.add(geo.name())
+        dagPath = selection.getDagPath(0)
         return dagPath
+
+    def find_node_by_component(self, geo):
+        ''' assumes a component selection and gets first index. Might be a better way to do this. '''
+        selection = om.MSelectionList()
+        dagPath = om.MDagPath()
+        selection.add(geo[0].name())
+        dagPath = selection.getDagPath(0)
+        return dagPath.fullPathName()
+
+    def softSelection(self):
+        ''' create and return a list of the soft selection weights '''
+        #TODO: Would be nice to rewrite this using the new API. Low priority.
+        #TODO: Debug on multiple selections
+        selection = omo.MSelectionList()
+        softSelection = omo.MRichSelection()
+        omo.MGlobal.getRichSelection(softSelection)
+        softSelection.getSelection(selection)
+
+        dagPath = omo.MDagPath()
+        selection.getDagPath(0, dagPath)
+        component = omo.MObject()
+        geoIter = omo.MItGeometry(dagPath)
+        pointCount = geoIter.exactCount()
+        #TODO: MFloatArray and MDoubleArray had strange inconsistencies. But a list might be slow as hell.
+        weightArray = [0.0] * pointCount
+
+        iter = omo.MItSelectionList(selection, omo.MFn.kMeshVertComponent)
+        #NOTE: since I commented out the while loop, this should just work on the first selected transform.
+        #while not iter.isDone():
+        iter.getDagPath(dagPath, component)
+        fnComp = omo.MFnSingleIndexedComponent(component)
+        if fnComp.hasWeights():
+            for i in range(fnComp.elementCount()):
+                element = fnComp.element(i)
+                weight = fnComp.weight(i).influence()
+                invert = -weight + 1.0
+                weightArray[element] = weight
+        #iter.next()
+        return weightArray
 
 
     @timer
-    def split_blendshapes(self, geoSplitLeft, geoSplitRight, geoSculpt, geoNeutral, width, degree):
+    def split_blendshapes_by_selection(self, positiveGeo, negativeGeo, geoSculpt, geoNeutral):
+        """ Take a deformed mesh a neutral mesh and create a split based on a soft component selection."""
+        # THE SPLIT RESULT LEFT
+        dagPathLeft = self.get_dagpath(positiveGeo)
+        # THE SPLIT RESULT RIGHT
+        dagPathRight = self.get_dagpath(negativeGeo)
+        # THE SCULPTED SHAPE
+        dagPath1 = self.get_dagpath(geoSculpt)
+        # THE NEUTRAL BASE SHAPE
+        dagPath2 = self.get_dagpath(geoNeutral)
+
+        #TODO: Add space as an option
+        space = om.MSpace.kObject
+        try:
+            # initialize a geometry iterator for the geos
+            geoIterLeft = om.MFnMesh(dagPathLeft)
+            geoIterRight = om.MFnMesh(dagPathRight)
+            geoIter1 = om.MFnMesh(dagPath1)
+            geoIter2 = om.MFnMesh(dagPath2)
+
+            # get the positions of all the vertices in chosen space
+            pArrayLeft = geoIterLeft.getPoints(space)
+            pArrayRight = geoIterRight.getPoints(space)
+            pArray1 = geoIter1.getPoints(space)
+            pArray2 = geoIter2.getPoints(space)
+
+            weightMap = self.softSelection()
+            # iterate over one of the neutral geometries to get clean xpos readings.
+            for i in xrange(geoIterLeft.numVertices):
+                # the weight result is a value from 0.0 to 1.0
+                weight = weightMap[i]
+
+                leftVector = self.get_midpoint(pArrayLeft[i], pArray1[i], weight)
+                rightVector = self.get_midpoint(pArrayLeft[i], pArray1[i], -weight + 1.0)
+                pArrayLeft[i].x = leftVector.x
+                pArrayLeft[i].y = leftVector.y
+                pArrayLeft[i].z = leftVector.z
+                pArrayRight[i].x = rightVector.x
+                pArrayRight[i].y = rightVector.y
+                pArrayRight[i].z = rightVector.z
+
+            # update the surface of the geometry with the changes
+            geoIterLeft.setPoints(pArrayLeft)
+            geoIterRight.setPoints(pArrayRight)
+            geoIterLeft.updateSurface()
+            geoIterRight.updateSurface()
+        except: raise
+
+
+    @timer
+    def split_blendshapes(self, geoSplitLeft, geoSplitRight, geoSculpt, geoNeutral, center, width, degree):
         """ Take a deformed mesh a neutral mesh and create a left and right split for blendshape creation.
         To be fairly safe, it first duplicates the neutral geometry and then modifies the duplicates. """
         #TODO: Grab the neutral geometry from the shapeOrig? So I can work in-pose
@@ -401,7 +523,7 @@ class RigmaroleBlendshapeTools(object):
                 # this bit normalizes the x position relative to the width.
                 # Anything below width will be 0.0. Anything above will be 1.0
                 # Anything between the width will blend with the chosen easeInOut curve.
-                xpos = pArrayLeft[i].x
+                xpos = pArrayLeft[i].x - center
                 xposNormalized = ((xpos/width) + 1.0) * 0.5
                 xposClamped = sorted([xposNormalized, 0.0, 1.0])[1]
                 # the weight result is a value from 0.0 to 1.0
