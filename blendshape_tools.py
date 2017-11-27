@@ -357,7 +357,10 @@ class RigmaroleBlendshapeTools(object):
         neutralBB = neutral.getBoundingBox()
 
         #TODO: Set up a width_indicator rig widget to visualize how things will split.
-        center = pm.PyNode('center_indicator').tx.get()
+        if pm.objExists('center_indicator'):
+            center = pm.PyNode('center_indicator').tx.get()
+        else:
+            center = 0.0
         width = abs(pm.PyNode('width_indicator').tx.get() - center)
         
         pm.delete(pm.ls('ZZZ_OUTPUT*'))
