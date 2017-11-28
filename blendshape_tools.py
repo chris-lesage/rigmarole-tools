@@ -11,6 +11,9 @@ with blendshapes and character rigging workflows.
 
 The [source for Rigmarole Blendshape Tools](https://github.com/chris-lesage/rigmarole-tools) is available on
 GitHub.
+
+IDEAS:
+- "Make shape live". Imagine you have a sculpted smile. A static mesh. Save that shape. Neutralize it, and then store the saved shape as a temporary blendshape on the neutralized mesh. That way, you can erase or delta smooth the shape relative to whatever neutral geo you chose.
 """
 
 __version__ = '0.14'
@@ -295,7 +298,11 @@ class RigmaroleBlendshapeTools(object):
             return False
 
         neutralBB = neutral.getBoundingBox()
-        geoToSplit = pm.PyNode(self.find_node_by_component(pm.selected())).getTransform()
+        if pm.selected():
+            geoToSplit = pm.PyNode(self.find_node_by_component(pm.selected())).getTransform()
+        else:
+            pm.warning('Nothing selected. This function works on a vertex selection. Please select vertices.')
+            return False
 
         pm.delete(pm.ls('ZZZ_OUTPUT*'))
         positiveResult = pm.duplicate(neutral, n='ZZZ_OUTPUT_{}_Positive'.format(geoToSplit.name()))[0]
@@ -385,7 +392,41 @@ class RigmaroleBlendshapeTools(object):
         dagPath = selection.getDagPath(0)
         return dagPath.fullPathName()
 
-    def softSelection(self):
+    def hard_selection_weights(self):
+        ''' create and return a list of the selection weights. Selected = 1.0
+        Unselected = 0.0. This is used instead of soft selection when that mode is turned off. '''
+        #TODO: Would be nice to rewrite this using the new API. Low priority.
+        #TODO: Debug on multiple selections
+
+        # temporary hack. Turn off symmetry when reading MRichSelection until I learn to use symmetry.
+        # as far as my tests go, this maintains the symmetrical selection but reads it like a whole selection.
+        # otherwise, only one half will be reading by MRichSelection. How does getSymmetry() work?
+        symmetryOn = mc.symmetricModelling(q=True, symmetry=True)
+        if symmetryOn:
+            mc.symmetricModelling(e=True, symmetry=False)
+
+        selection = omo.MSelectionList()
+        omo.MGlobal.getActiveSelectionList(selection)
+        dagPath = omo.MDagPath()
+        component = omo.MObject()
+        stat = selection.getDagPath(0, dagPath, component)
+        compFn = omo.MFnSingleIndexedComponent(component)
+        geoIter = omo.MItGeometry(dagPath)
+        selectedIds = omo.MIntArray()
+        compFn.getElements(selectedIds)
+
+        pointCount = geoIter.exactCount()
+        weightArray = [0.0] * pointCount
+
+        for element in selectedIds:
+            weightArray[element] = 1.0
+
+        # Put the symmetry back to the way it was.
+        mc.symmetricModelling(e=True, symmetry=symmetryOn)
+        return weightArray
+
+
+    def soft_selection_weights(self):
         ''' create and return a list of the soft selection weights '''
         #TODO: Would be nice to rewrite this using the new API. Low priority.
         #TODO: Debug on multiple selections
@@ -393,9 +434,9 @@ class RigmaroleBlendshapeTools(object):
         # temporary hack. Turn off symmetry when reading MRichSelection until I learn to use symmetry.
         # as far as my tests go, this maintains the symmetrical selection but reads it like a whole selection.
         # otherwise, only one half will be reading by MRichSelection. How does getSymmetry() work?
-        symmetryOn = pm.symmetricModelling(q=True, symmetry=True)
+        symmetryOn = mc.symmetricModelling(q=True, symmetry=True)
         if symmetryOn:
-            pm.symmetricModelling(e=True, symmetry=False)
+            mc.symmetricModelling(e=True, symmetry=False)
 
         selection = omo.MSelectionList()
         softSelection = omo.MRichSelection()
@@ -425,13 +466,27 @@ class RigmaroleBlendshapeTools(object):
         #iter.next()
 
         # Put the symmetry back to the way it was.
-        pm.symmetricModelling(e=True, symmetry=symmetryOn)
+        mc.symmetricModelling(e=True, symmetry=symmetryOn)
         return weightArray
 
 
     @timer
     def split_blendshapes_by_selection(self, positiveGeo, negativeGeo, geoSculpt, geoNeutral):
         """ Take a deformed mesh a neutral mesh and create a split based on a soft component selection."""
+
+        # Query if in soft mode AND component selection mode.
+        useWeights = False
+        softSelectionOn = mc.softSelect(q=True, sse=True)
+        componentMode = mc.selectMode(q=True, component=True)
+        if componentMode:
+            if softSelectionOn:
+                weightMap = self.soft_selection_weights()
+            else:
+                weightMap = self.hard_selection_weights()
+        else:
+            pm.warning('This function works with a vertex selection. Please select vertices.')
+            return False
+
         # THE SPLIT RESULT LEFT
         dagPathLeft = self.get_dagpath(positiveGeo)
         # THE SPLIT RESULT RIGHT
@@ -456,7 +511,6 @@ class RigmaroleBlendshapeTools(object):
             pArray1 = geoIter1.getPoints(space)
             pArray2 = geoIter2.getPoints(space)
 
-            weightMap = self.softSelection()
             # iterate over one of the neutral geometries to get clean xpos readings.
             for i in xrange(geoIterLeft.numVertices):
                 # the weight result is a value from 0.0 to 1.0
@@ -550,18 +604,39 @@ class RigmaroleBlendshapeTools(object):
         dagPath = self.get_dagpath(geoObject)
         dagPath2 = self.get_dagpath(geoTarget)
 
+        # Query if in soft mode AND component selection mode.
+        useWeights = False
+        softSelectionOn = mc.softSelect(q=True, sse=True)
+        componentMode = mc.selectMode(q=True, component=True)
+        if componentMode:
+            if softSelectionOn:
+                weightMap = self.soft_selection_weights()
+            else:
+                weightMap = self.hard_selection_weights()
+            useWeights = True
+
         space = om.MSpace.kObject
 
         try:
             #TODO: Include world/local as space options
             # initialize a geometry iterator for both geos
-            geoIter = om.MFnMesh(dagPath)
+            geoIter1 = om.MFnMesh(dagPath)
             geoIter2 = om.MFnMesh(dagPath2)
             # get the positions of all the vertices in world space
+            pArray1 = geoIter1.getPoints(space)
             pArray2 = geoIter2.getPoints(space)
+
+            if useWeights:
+                for i in xrange(geoIter1.numVertices):
+                    weight = weightMap[i]
+                    resultVector = self.get_midpoint(pArray1[i], pArray2[i], weight)
+                    pArray2[i].x = resultVector.x
+                    pArray2[i].y = resultVector.y
+                    pArray2[i].z = resultVector.z
+
             # update the surface of the geometry with the changes
-            geoIter.setPoints(pArray2)
-            geoIter.updateSurface()
+            geoIter1.setPoints(pArray2)
+            geoIter1.updateSurface()
         except: raise
 
 
