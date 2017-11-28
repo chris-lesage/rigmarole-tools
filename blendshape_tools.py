@@ -389,9 +389,18 @@ class RigmaroleBlendshapeTools(object):
         ''' create and return a list of the soft selection weights '''
         #TODO: Would be nice to rewrite this using the new API. Low priority.
         #TODO: Debug on multiple selections
+
+        # temporary hack. Turn off symmetry when reading MRichSelection until I learn to use symmetry.
+        # as far as my tests go, this maintains the symmetrical selection but reads it like a whole selection.
+        # otherwise, only one half will be reading by MRichSelection. How does getSymmetry() work?
+        symmetryOn = pm.symmetricModelling(q=True, symmetry=True)
+        if symmetryOn:
+            pm.symmetricModelling(e=True, symmetry=False)
+
         selection = omo.MSelectionList()
         softSelection = omo.MRichSelection()
         omo.MGlobal.getRichSelection(softSelection)
+        #softSelection.getSymmetry(selection)
         softSelection.getSelection(selection)
 
         dagPath = omo.MDagPath()
@@ -399,7 +408,7 @@ class RigmaroleBlendshapeTools(object):
         component = omo.MObject()
         geoIter = omo.MItGeometry(dagPath)
         pointCount = geoIter.exactCount()
-        #TODO: MFloatArray and MDoubleArray had strange inconsistencies. But a list might be slow as hell.
+        #TODO: MFloatArray and MDoubleArray had strange inconsistencies. But a list might be slow.
         weightArray = [0.0] * pointCount
 
         iter = omo.MItSelectionList(selection, omo.MFn.kMeshVertComponent)
@@ -414,6 +423,9 @@ class RigmaroleBlendshapeTools(object):
                 invert = -weight + 1.0
                 weightArray[element] = weight
         #iter.next()
+
+        # Put the symmetry back to the way it was.
+        pm.symmetricModelling(e=True, symmetry=symmetryOn)
         return weightArray
 
 
