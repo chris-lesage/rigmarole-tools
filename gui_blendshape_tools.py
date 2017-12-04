@@ -26,6 +26,11 @@ class BlendshapeToolsWindow(QtWidgets.QMainWindow):
     splitBlendshapesSoftClicked = QtCore.Signal(str)
     chooseSmashGeoClicked = QtCore.Signal(str)
 
+    def onChooseNeutralClicked(prefix):
+        print('Choose neutral geo clicked. Message:', prefix)
+    chooseNeutralClicked.connect(onChooseNeutralClicked)
+
+
 
 def create_window():
     window = BlendshapeToolsWindow()
@@ -33,6 +38,7 @@ def create_window():
 
     container = QtWidgets.QWidget(window)
     horizontal = QtCore.Qt.Horizontal
+    groupFont = QtGui.QFont('Helvetica Neue', 10, QtGui.QFont.Bold)
     
     volumeLabel = QtWidgets.QLabel('Intensity')
     volumeSlider = QtWidgets.QSlider(orientation=horizontal)
@@ -116,11 +122,13 @@ def create_window():
     layout4.addWidget(smashGeoButton)
 
     group0 = QtWidgets.QGroupBox('Options')
+    group0.setFont(groupFont)
     optionsLayout = QtWidgets.QVBoxLayout()
     optionsLayout.addLayout(layout0)
     group0.setLayout(optionsLayout)
 
     group1 = QtWidgets.QGroupBox('Split Blendshapes')
+    group1.setFont(groupFont)
     splitBlendshapeLayout = QtWidgets.QVBoxLayout()
     splitBlendshapeLayout.addLayout(layout1)
     splitBlendshapeLayout.addLayout(layout2)
@@ -129,6 +137,7 @@ def create_window():
     group1.setLayout(splitBlendshapeLayout)
     
     group2 = QtWidgets.QGroupBox('Vertex Smash')
+    group2.setFont(groupFont)
     vertexSmashLayout = QtWidgets.QVBoxLayout()
     vertexSmashLayout.addLayout(layout4)
     group2.setLayout(vertexSmashLayout)
@@ -144,10 +153,6 @@ def create_window():
 if __name__ == '__main__':
     app = QtWidgets.QApplication([])
     win = create_window()
-
-    def onChooseNeutralClicked(prefix):
-        print('Choose neutral geo clicked. Message:', prefix)
-    win.chooseNeutralClicked.connect(onChooseNeutralClicked)
 
     def onChooseSplitClicked(prefix):
         print('Choose split geo clicked. Message:', prefix)
