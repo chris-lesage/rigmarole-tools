@@ -19,6 +19,7 @@ except ImportError:
 
 
 class BlendshapeToolsWindow(QtWidgets.QMainWindow):
+    volumeSliderChanged = QtCore.Signal(str)
     chooseNeutralClicked = QtCore.Signal(str)
     chooseGeoToSplitClicked = QtCore.Signal(str)
     smashGeoButtonClicked = QtCore.Signal(str)
@@ -26,23 +27,26 @@ class BlendshapeToolsWindow(QtWidgets.QMainWindow):
     splitBlendshapesSoftClicked = QtCore.Signal(str)
     chooseSmashGeoClicked = QtCore.Signal(str)
 
-    def onChooseNeutralClicked(prefix):
-        print('Choose neutral geo clicked. Message:', prefix)
-    chooseNeutralClicked.connect(onChooseNeutralClicked)
-
-
 
 def create_window():
     window = BlendshapeToolsWindow()
     window.setWindowTitle('Rigmarole Blendshape Tools')
+
+    #############################
+    ###### CREATE ELEMENTS ######
+    #############################
 
     container = QtWidgets.QWidget(window)
     horizontal = QtCore.Qt.Horizontal
     groupFont = QtGui.QFont('Helvetica Neue', 10, QtGui.QFont.Bold)
     
     volumeLabel = QtWidgets.QLabel('Intensity')
-    volumeSlider = QtWidgets.QSlider(orientation=horizontal)
+    volumeSlider = QtWidgets.QSlider(orientation=horizontal, minimum=0, maximum=100)
+    volumeSlider.setSliderPosition(100)
     volumeIndicator = QtWidgets.QLineEdit(maximumWidth=80)
+    volumeResult = round(volumeSlider.value() * 0.01, 3)
+    #TODO: Change this string indicator to an integer instead
+    volumeIndicator.setText(str(volumeResult))
 
     falloffLabel = QtWidgets.QLabel('Falloff Easing')
     falloffDropdown = QtWidgets.QComboBox()
@@ -62,6 +66,17 @@ def create_window():
 
     splitBlendshapesButton = QtWidgets.QPushButton('Split Blendshapes using Helpers', container)
     splitBlendshapesSoftButton = QtWidgets.QPushButton('Split Blendshapes by Soft Selection', container)
+
+
+    ##########################
+    ###### SIGNAL EMITS ######
+    ##########################
+
+    def onchange():
+        volumeResult = round(volumeSlider.value() * 0.01, 3)
+        volumeIndicator.setText(str(volumeResult))
+        window.volumeSliderChanged.emit(volumeSlider.value())
+    volumeSlider.valueChanged.connect(onchange)
 
     def onclick():
         window.chooseNeutralClicked.emit(textbox.text())
@@ -86,6 +101,42 @@ def create_window():
     def onclick():
         window.splitBlendshapesSoftClicked.emit(splitGeoField.text())
     splitBlendshapesSoftButton.clicked.connect(onclick)
+
+    ##########################
+    ###### SIGNAL SLOTS ######
+    ##########################
+    
+    def onVolumeSliderChanged(message):
+        pass
+    window.volumeSliderChanged.connect(onVolumeSliderChanged)
+
+    def onChooseNeutralClicked(message):
+        print('Choose neutral geo clicked. Message:', message)
+    window.chooseNeutralClicked.connect(onChooseNeutralClicked)
+
+    def onChooseSplitClicked(message):
+        print('Choose split geo clicked. Message:', message)
+    window.chooseGeoToSplitClicked.connect(onChooseSplitClicked)
+    
+    def onSmashVertexClicked(message):
+        print('Smash Vertex clicked. Message:', message)
+    window.smashGeoButtonClicked.connect(onSmashVertexClicked)
+    
+    def onSplitBlendshapesClicked(message):
+        print('Split Blendshapes by Helper clicked. Message:', message)
+    window.splitBlendshapesClicked.connect(onSplitBlendshapesClicked)
+    
+    def onSplitBlendshapesSoftClicked(message):
+        print('Split Blendshapes by Soft Selection clicked. Message:', message)
+    window.splitBlendshapesSoftClicked.connect(onSplitBlendshapesSoftClicked)
+    
+    def onChooseSmashGeoClicked(message):
+        print('Choose Smash Geo clicked. Message:', message)
+    window.chooseSmashGeoClicked.connect(onChooseSmashGeoClicked)
+    
+    #########################
+    ###### MAIN LAYOUT ######
+    #########################
 
     mainLayout = QtWidgets.QVBoxLayout(container)
 
@@ -154,26 +205,6 @@ if __name__ == '__main__':
     app = QtWidgets.QApplication([])
     win = create_window()
 
-    def onChooseSplitClicked(prefix):
-        print('Choose split geo clicked. Message:', prefix)
-    win.chooseGeoToSplitClicked.connect(onChooseSplitClicked)
-    
-    def onSmashVertexClicked(prefix):
-        print('Smash Vertex clicked. Message:', prefix)
-    win.smashGeoButtonClicked.connect(onSmashVertexClicked)
-    
-    def onSplitBlendshapesClicked(prefix):
-        print('Split Blendshapes by Helper clicked. Message:', prefix)
-    win.splitBlendshapesClicked.connect(onSplitBlendshapesClicked)
-    
-    def onSplitBlendshapesSoftClicked(prefix):
-        print('Split Blendshapes by Soft Selection clicked. Message:', prefix)
-    win.splitBlendshapesSoftClicked.connect(onSplitBlendshapesSoftClicked)
-    
-    def onChooseSmashGeoClicked(prefix):
-        print('Choose Smash Geo clicked. Message:', prefix)
-    win.chooseSmashGeoClicked.connect(onChooseSmashGeoClicked)
-    
     win.show()
     app.exec_()
 
