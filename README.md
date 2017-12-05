@@ -1,10 +1,12 @@
-# Rigmarole Blendshape Tools
+# Rigmarole Blendshape Tools (alpha)
+
+*Beware. This tool is very early in development. It contains several bugs and no undo support. But the core functionality does work. Save yer scene...*
 
 author: Chris Lesage (Rigmarole Studio)
 
 date: December 2017
 
-A collection of utilities for working in Autodesk Maya
+A collection of utilities for working in Autodesk Maya (Tested in Maya 2016 and 2017.)
 with blendshapes and character rigging workflows.
 
 The [source for Rigmarole Blendshape Tools](https://github.com/chris-lesage/rigmarole-tools) is available on
