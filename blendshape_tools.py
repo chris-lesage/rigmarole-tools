@@ -117,8 +117,10 @@ class RigmaroleBlendshapeTools(object):
         self.buttons = {}
         self.options = {}
         self.options['splitBlendDegree'] = 4
+        self.options['softness'] = 0.0
         self.options['neutralGeo'] = None
         self.options['geoToSplit'] = []
+        self.options['splitMarkers'] = []
         self.options['smashGeo'] = []
         self.options['numberOfSplits'] = 1
         
@@ -180,6 +182,14 @@ class RigmaroleBlendshapeTools(object):
                     self.buttons['splitField'] = pm.textField()
                 geoToSplitLayout.redistribute(10, 50)
 
+                with pm.horizontalLayout() as geoToSplitLayout:
+                    neutralLoad = pm.button(
+                        label='Select Split Markers',
+                        command=pm.Callback(self.load_split_markers),
+                        )
+                    self.buttons['splitMarkersField'] = pm.textField()
+                geoToSplitLayout.redistribute(10, 50)
+
                 with pm.horizontalLayout() as numberOfSplitsLayout:
                     label = pm.text(label='Number of splits')
                     self.buttons['numberOfSplits'] = pm.intField(
@@ -222,7 +232,7 @@ class RigmaroleBlendshapeTools(object):
                         )
                 smashLayout.redistribute(10, 40, 10)
 
-            mainLayout.redistribute(10, 10, 10, 10, 20, 20, 20, 20, 20, 20, 10, 10, 10, 20)
+            mainLayout.redistribute(10, 10, 10, 10, 20, 20, 20, 20, 20, 20, 20, 10, 10, 10, 20)
         pm.showWindow()
 
 
@@ -254,6 +264,16 @@ class RigmaroleBlendshapeTools(object):
             self.options['geoToSplit'] = pm.selected()
         else:
             pm.warning('Please select geometry to use as neutral')
+
+    def load_split_markers(self):
+        markerField = self.buttons['splitMarkersField']
+        if pm.selected():
+            markerField.setText(', '.join([x.name() for x in pm.selected()]))
+            self.options['splitMarkers'] = pm.selected()
+        else:
+            pm.warning('Please select objects or locators to use as split markers.')
+            
+
 
     def change_splits_slider(self):
         numSplitsSlider = self.buttons['numSplitsSlider']
@@ -344,24 +364,36 @@ class RigmaroleBlendshapeTools(object):
 
         neutralBB = neutral.getBoundingBox()
 
-        #TODO: Set up a width_indicator rig widget to visualize how things will split.
-        if pm.objExists('center_indicator'):
-            center = pm.PyNode('center_indicator').tx.get()
-        else:
-            center = 0.0
-        width = abs(pm.PyNode('width_indicator').tx.get() - center)
-        
+        #TODO: Major feature: Imagine football lips. Those need to be split in 2 or more overlapping stages. Either the user needs a way to easily script this, or think of UI/UX ways to make this a simple thing to do multiple stages of splits. For instance, split the soft center of the football lips. Then hard split the symmetry of the remainder to get the 2 corners. How could you approach this?
+
+        # get all the split lines and their positions
+        splitLines = self.options['splitMarkers']
+        if not splitLines:
+            pm.warning('Please select objects or locators to use as split markers')
+            return False
+        splitLinesPos = [each.getTranslation(space='world')[0] for each in splitLines]
+        # tack None on to the ends of the list. When it is None, the weight will interpolate out forever.
+        splitLinesSorted = [None] + sorted(splitLinesPos) + [None]
+        # pair up [0,1,2], [1,2,3], [2,3,4], etc.
+        splitLinesPairs = zip(splitLinesSorted, splitLinesSorted[1:], splitLinesSorted[2:])
+
+        #TODO: Add softness as a GUI option
+        # define a bit of bleed over past the split line edges.
+        #TODO: There is a flaw. If softness is soft enough to bleed over 3 shapes, you get an additive accumulation. :<
+        self.options['softness'] = 0.6
+        softness = self.options['softness']
+        degree = self.options['splitBlendDegree']
+        # if there are not multiple splits (ie. just a symmetry split) then softness bleed isn't needed. TODO: TEST THAT ASSUMPTION
+        if len(splitLines) < 3: softness = 0.0
+
         pm.delete(pm.ls('ZZZ_OUTPUT*'))
-        for i, eachSplit in enumerate(geoToSplit):
-            #TODO: Add a scheme which creates temporary shapes. Then, once you are happy with the result you "commit" and it names them properly for you. This way you can test, iterate and then keep your changes and do the next split. But before you commit, the script keeps deleting the temp shapes.
-            leftResult = pm.duplicate(neutral, n='ZZZ_OUTPUT_{}_Left'.format(eachSplit.name()))[0]
-            rightResult = pm.duplicate(neutral, n='ZZZ_OUTPUT_{}_Right'.format(eachSplit.name()))[0]
-            leftResult.setTranslation(eachSplit.getTranslation())
-            rightResult.setTranslation(eachSplit.getTranslation())
-            degree = self.options['splitBlendDegree']
-            self.split_blendshapes(leftResult, rightResult, eachSplit, neutral, center, width, degree)
-            leftResult.tx.set(neutralBB.width() * 1.2)
-            rightResult.tx.set(neutralBB.width() * -1.2)
+        for geoCounter, eachSplit in enumerate(geoToSplit):
+            for splitCount, (lower, mid, upper) in enumerate(splitLinesPairs):
+                #TODO: Add a scheme which creates temporary shapes. Then, once you are happy with the result you "commit" and it names them properly for you. This way you can test, iterate and then keep your changes and do the next split. But before you commit, the script keeps deleting the temp shapes.
+                resultGeo = pm.duplicate(neutral, n='ZZZ_OUTPUT_{}_{}'.format(eachSplit.name(), geoCounter+1))[0]
+                resultGeo.setTranslation(eachSplit.getTranslation())
+                self.split_blendshapes(resultGeo, eachSplit, neutral, lower, mid, upper, softness, degree)
+                resultGeo.tx.set((neutralBB.width() * 1.2) * (splitCount+1))
 
 
     #################################
@@ -534,21 +566,43 @@ class RigmaroleBlendshapeTools(object):
 
 
     @timer
-    def split_blendshapes(self, geoSplitLeft, geoSplitRight, geoSculpt, geoNeutral, center, width, degree):
+    def split_blendshapes(self, geoResult, geoDelta, geoNeutral, lower, mid, upper, softness, degree):
         """ Take a deformed mesh a neutral mesh and create a left and right split for blendshape creation.
         To be fairly safe, it first duplicates the neutral geometry and then modifies the duplicates. """
         #TODO: Grab the neutral geometry from the shapeOrig? So I can work in-pose
         #TODO: Design these functions to work well with the Shape Editor if possible.
         #TODO: Auto set up a test blendshape so you can scrub and test the result quickly.
 
+        # split the interpolation into 2 segments for ease in and ease out.
+        # This is a little bit hacky and bad and you should feel bad.
+        # | width1  |  width2  |
+        useWeight1 = True
+        useWeight2 = True
+        if lower == None:
+            useWeight1 = False
+        else:
+            width1 = (mid-lower)
+            lower1 = lower - (width1 * softness)
+            upper1 = mid + (width1 * softness)
+            width1 = (upper1-lower1)
+            # protect from division by zero
+            width1 += 0.0001
+        if upper == None:
+            useWeight2 = False
+        else:
+            width2 = (upper-mid)
+            lower2 = mid - (width2 * softness)
+            upper2 = upper + (width2 * softness)
+            width2 = (upper2-lower2)
+            # protect from division by zero
+            width2 += 0.0001
+
         easeFunction = self.easeFunctions[degree]
 
-        # THE SPLIT RESULT LEFT
-        dagPathLeft = self.get_dagpath(geoSplitLeft)
-        # THE SPLIT RESULT RIGHT
-        dagPathRight = self.get_dagpath(geoSplitRight)
+        # THE SPLIT RESULT
+        dagPathResult = self.get_dagpath(geoResult)
         # THE SCULPTED SHAPE
-        dagPath1 = self.get_dagpath(geoSculpt)
+        dagPath1 = self.get_dagpath(geoDelta)
         # THE NEUTRAL BASE SHAPE
         dagPath2 = self.get_dagpath(geoNeutral)
 
@@ -556,43 +610,47 @@ class RigmaroleBlendshapeTools(object):
         space = om.MSpace.kObject
         try:
             # initialize a geometry iterator for the geos
-            geoIterLeft = om.MFnMesh(dagPathLeft)
-            geoIterRight = om.MFnMesh(dagPathRight)
+            geoIterResult = om.MFnMesh(dagPathResult)
             geoIter1 = om.MFnMesh(dagPath1)
             geoIter2 = om.MFnMesh(dagPath2)
 
             # get the positions of all the vertices in chosen space
-            pArrayLeft = geoIterLeft.getPoints(space)
-            pArrayRight = geoIterRight.getPoints(space)
+            pArrayResult = geoIterResult.getPoints(space)
             pArray1 = geoIter1.getPoints(space)
             pArray2 = geoIter2.getPoints(space)
 
-            width += 0.0001 # protect from division by zero
             # iterate over one of the neutral geometries to get clean xpos readings.
-            for i in xrange(geoIterLeft.numVertices):
+            for i in xrange(geoIterResult.numVertices):
                 # this bit normalizes the x position relative to the width.
                 # Anything below width will be 0.0. Anything above will be 1.0
                 # Anything between the width will blend with the chosen easeInOut curve.
-                xpos = pArrayLeft[i].x - center
-                xposNormalized = ((xpos/width) + 1.0) * 0.5
-                xposClamped = sorted([xposNormalized, 0.0, 1.0])[1]
-                # the weight result is a value from 0.0 to 1.0
-                weight = easeFunction(xposClamped, 0.0, 1.0, 1.0)
 
-                leftVector = self.get_midpoint(pArrayLeft[i], pArray1[i], weight)
-                rightVector = self.get_midpoint(pArrayLeft[i], pArray1[i], -weight + 1.0)
-                pArrayLeft[i].x = leftVector.x
-                pArrayLeft[i].y = leftVector.y
-                pArrayLeft[i].z = leftVector.z
-                pArrayRight[i].x = rightVector.x
-                pArrayRight[i].y = rightVector.y
-                pArrayRight[i].z = rightVector.z
+                xpos = pArrayResult[i].x
+                if useWeight1:
+                    xposNormalized1 = ((xpos/width1) + 1.0) - (upper1/width1)
+                    xposClamped1 = sorted([xposNormalized1, 0.0, 1.0])[1]
+                    weight1 = easeFunction(xposClamped1, 0.0, 1.0, 1.0)
+                else:
+                    weight1 = 1.0
+                if useWeight2:
+                    xposNormalized2 = ((xpos/width2) + 1.0) - (upper2/width2)
+                    xposClamped2 = sorted([xposNormalized2, 0.0, 1.0])[1]
+                    weight2 = easeFunction(xposClamped2, 0.0, 1.0, 1.0)
+                    weight2 = -weight2 + 1.0
+                else:
+                    weight2 = 1.0
+
+                # blend the results together. The 2 ends are 1, so they don't ease out.
+                weight = weight1 * weight2
+
+                leftVector = self.get_midpoint(pArrayResult[i], pArray1[i], weight)
+                pArrayResult[i].x = leftVector.x
+                pArrayResult[i].y = leftVector.y
+                pArrayResult[i].z = leftVector.z
 
             # update the surface of the geometry with the changes
-            geoIterLeft.setPoints(pArrayLeft)
-            geoIterRight.setPoints(pArrayRight)
-            geoIterLeft.updateSurface()
-            geoIterRight.updateSurface()
+            geoIterResult.setPoints(pArrayResult)
+            geoIterResult.updateSurface()
         except: raise
 
 
