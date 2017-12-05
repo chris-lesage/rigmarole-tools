@@ -29,6 +29,7 @@ Editor and have "Edit" enabled on a shape. It's a fast convenient way
 to load a modelled shape into a blendshape which already exists without
 having to delete the existing target and reload it. Tools like this already
 exist in Maya and the Shape Editor, but I'll integrate it into the BS Tools.
+This tool supports component and soft selections, so you can blend in portions of other shapes.
 
 3. Split by Soft Selection - This takes a selection and splits between what is
 selected and what isn't. This is very useful for isolating the upper eyelid
@@ -38,9 +39,9 @@ world axis couldn't give you.
 4. Split by weight map - Coming later.
 
 More to come, including:
-[x] Split by soft selection support
-* multiple splits (not just left/right)
-* Vertex smash to support soft selection
+* [DONE] Split by soft selection support
+* [DONE] Vertex smash to support soft selection
+* [DONE] multiple splits (not just left/right)
 * splitting on a custom axis
 * undo support!
 * working with weight maps
