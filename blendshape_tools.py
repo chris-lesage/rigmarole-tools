@@ -255,7 +255,7 @@ class RigmaroleBlendshapeTools(object):
                         )
                 smashLayout.redistribute(10, 40, 10)
 
-            mainLayout.redistribute(10, 10, 10, 10, 20, 20, 20, 20, 20, 20, 20, 10, 10, 10, 20)
+            mainLayout.redistribute(10, 10, 10, 10, 20, 20, 20, 20, 20, 20, 20, 20, 10, 10, 10, 20)
         pm.showWindow()
 
 
