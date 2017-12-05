@@ -82,6 +82,17 @@ def easeInOutQuad(t, b, c, d):
     t-=1
     return -c/2 * (t*(t-2) - 1) + b
 
+def lerp_values(lower, upper, segments, inclusive=True):
+    ''' lerp values and optionally include the first and last values '''
+    if segments == 1:
+        yield (lower + upper) * 0.5
+    else:
+        for each in xrange(segments):
+            if each in [0, segments-1] and not inclusive:
+                pass
+            else:
+                yield (each / float(segments-1)) * (float(upper)-float(lower)) + lower
+
 
 def maya_main_window():
     """Return the Maya main window widget as a Python object."""
@@ -205,6 +216,18 @@ class RigmaroleBlendshapeTools(object):
                         )
                 numberOfSplitsLayout.redistribute(10, 5, 35, 10)
 
+                with pm.horizontalLayout() as softnessLayout:
+                    label = pm.text(label='Softness')
+                    self.buttons['softnessLevel'] = pm.floatField(
+                        value=0.0,
+                        changeCommand=pm.Callback(self.change_splits),
+                        precision=2,
+                        )
+                    self.buttons['softnessSlider'] = pm.intSlider(value=0, minValue=0, maxValue=100,
+                        changeCommand=pm.Callback(self.change_softness_slider),
+                        )
+                softnessLayout.redistribute(10, 5, 45)
+
                 btn = pm.button(
                     label='Split Blendshapes',
                     command=pm.Callback(self.template_btn, 'split', self.split_blendshapes_btn),
@@ -290,7 +313,28 @@ class RigmaroleBlendshapeTools(object):
     def create_split_helpers(self):
         numSplits = self.options['numberOfSplits']
         print('#TODO: Create locators with {} splits'.format(numSplits))
+        if self.options['neutralGeo']:
+            neutralBB = self.options['neutralGeo'].getBoundingBox()
+        else:
+            neutralBB = dt.BoundingBox()
+            neutralBB.expand([-5.0, -5.0, -5.0])
+            neutralBB.expand([5.0, 5.0, 5.0])
+        splitHelpers = []
+        for i, each in enumerate(lerp_values(neutralBB.min()[0], neutralBB.max()[0], numSplits)):
+            oLoc = pm.spaceLocator(n='width_indicator_{}'.format(i+1))
+            oLoc.localScale.set(0, neutralBB.height() * 1.5, 0)
+            oLoc.localPositionZ.set(neutralBB.max()[2] + 0.5)
+            oLoc.tx.set(each)
+            splitHelpers.append(oLoc)
+        if self.options['splitMarkers'] == []:
+            self.buttons['splitMarkersField'].setText(', '.join([x.name() for x in splitHelpers]))
+            self.options['splitMarkers'] = splitHelpers
    
+    def change_softness_slider(self):
+        softnessLevel = float(self.buttons['softnessSlider'].getValue()) * 0.01
+        self.buttons['softnessLevel'].setValue(softnessLevel)
+        self.options['softness'] = softnessLevel
+
     def set_blend_degree(self, degree):
         self.options['splitBlendDegree'] = degree
         print('degree: {}'.format(degree))
@@ -380,7 +424,6 @@ class RigmaroleBlendshapeTools(object):
         #TODO: Add softness as a GUI option
         # define a bit of bleed over past the split line edges.
         #TODO: There is a flaw. If softness is soft enough to bleed over 3 shapes, you get an additive accumulation. :<
-        self.options['softness'] = 0.6
         softness = self.options['softness']
         degree = self.options['splitBlendDegree']
         # if there are not multiple splits (ie. just a symmetry split) then softness bleed isn't needed. TODO: TEST THAT ASSUMPTION
