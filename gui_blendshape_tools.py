@@ -20,6 +20,7 @@ except ImportError:
 
 class BlendshapeToolsWindow(QtWidgets.QMainWindow):
     volumeSliderChanged = QtCore.Signal(str)
+    softnessSliderChanged = QtCore.Signal(str)
     chooseNeutralClicked = QtCore.Signal(str)
     chooseGeoToSplitClicked = QtCore.Signal(str)
     smashGeoButtonClicked = QtCore.Signal(str)
@@ -47,6 +48,14 @@ def create_window():
     volumeResult = round(volumeSlider.value() * 0.01, 3)
     #TODO: Change this string indicator to an integer instead
     volumeIndicator.setText(str(volumeResult))
+
+    softnessLabel = QtWidgets.QLabel('Softness')
+    softnessSlider = QtWidgets.QSlider(orientation=horizontal, minimum=0, maximum=100)
+    softnessSlider.setSliderPosition(0)
+    softnessIndicator = QtWidgets.QLineEdit(maximumWidth=80)
+    softnessResult = round(softnessSlider.value() * 0.01, 3)
+    #TODO: Change this string indicator to an integer instead
+    softnessIndicator.setText(str(softnessResult))
 
     falloffLabel = QtWidgets.QLabel('Falloff Easing')
     falloffDropdown = QtWidgets.QComboBox()
@@ -77,6 +86,12 @@ def create_window():
         volumeIndicator.setText(str(volumeResult))
         window.volumeSliderChanged.emit(volumeSlider.value())
     volumeSlider.valueChanged.connect(onchange)
+
+    def onchange():
+        softnessResult = round(softnessSlider.value() * 0.01, 3)
+        softnessIndicator.setText(str(softnessResult))
+        window.softnessSliderChanged.emit(softnessSlider.value())
+    softnessSlider.valueChanged.connect(onchange)
 
     def onclick():
         window.chooseNeutralClicked.emit(textbox.text())
@@ -109,6 +124,10 @@ def create_window():
     def onVolumeSliderChanged(message):
         pass
     window.volumeSliderChanged.connect(onVolumeSliderChanged)
+
+    def onSoftnessSliderChanged(message):
+        pass
+    window.softnessSliderChanged.connect(onSoftnessSliderChanged)
 
     def onChooseNeutralClicked(message):
         print('Choose neutral geo clicked. Message:', message)
@@ -146,6 +165,12 @@ def create_window():
     layout0.addWidget(volumeSlider)
     layout0.addWidget(volumeIndicator)
 
+    # LAYOUT: softness intensity slider
+    layout6 = QtWidgets.QHBoxLayout()
+    layout6.addWidget(softnessLabel)
+    layout6.addWidget(softnessSlider)
+    layout6.addWidget(softnessIndicator)
+
     # LAYOUT: Falloff Easing dropdown box
     layout1 = QtWidgets.QHBoxLayout()
     layout1.addWidget(falloffLabel)
@@ -176,6 +201,7 @@ def create_window():
     group0.setFont(groupFont)
     optionsLayout = QtWidgets.QVBoxLayout()
     optionsLayout.addLayout(layout0)
+    optionsLayout.addLayout(layout6)
     group0.setLayout(optionsLayout)
 
     group1 = QtWidgets.QGroupBox('Split Blendshapes')
