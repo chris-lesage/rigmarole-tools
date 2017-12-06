@@ -23,6 +23,8 @@ Other split tools I've seen would use a percentage of the geometry's width. This
 tool uses split helpers to read split positions, so you can get consistent splits
 between geometry of different widths. For example, head vs. eyebrow geometry.
 
+![Split Blendshapes screenShot](/screenshots/split_blendshapes.jpg)
+
 2. Vertex Smash - This simply sets the positions of the vertices to match
 a target geo. It is especially useful when you are working in the Shape
 Editor and have "Edit" enabled on a shape. It's a fast convenient way
