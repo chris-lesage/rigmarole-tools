@@ -1,4 +1,12 @@
-# Rigmarole Blendshape Tools (alpha)
+# Rigmarole Tools
+
+This is a set of tools for rigging and animation in Autodesk Maya.
+
+## 1. Rigmarole Animation Warp
+
+See https://github.com/chris-lesage/rigmarole-tools/blob/master/Animation_Warp.md for details
+
+## 2. Rigmarole Blendshape Tools (alpha)
 
 *Beware. This tool is very early in development. It contains several bugs and no undo support. But the core functionality does work. Save yer scene...*
 
