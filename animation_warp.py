@@ -1,5 +1,5 @@
 import pymel.core as pm
-import maya.cmds as mc
+import maya.cmds as cmds
 from pymel.util.path import path
 from functools import wraps
 
@@ -314,7 +314,7 @@ class AnimationWarping:
         referenceFile = oRig.referenceFile()
         
         #TODO: Switch to PyMEL
-        refFile = mc.file(str(referenceFile), r=True, type='mayaAscii', gl=True,
+        refFile = cmds.file(str(referenceFile), r=True, type='mayaAscii', gl=True,
                 loadReferenceDepth='all', namespace=newNamespace)
         refNode = pm.PyNode(pm.referenceQuery( refFile, referenceNode=True))
         refNode2 = pm.PyNode(pm.referenceQuery( refNode, nodes=True)[0])
