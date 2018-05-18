@@ -12,15 +12,6 @@ The warp curve is bent by using a splineIK rig
 
 ### INITIAL SETUP
 In Step 1: Select the character-space or world-space nodes. Controls such as IK feet or spines.
-
-#TODO:
-- If a keyable attribute has incoming connections (for example a pairBlend or animBlendNodeAdditiveScale) then a key is not added in connect_together_keyframes(). I should check for local (non-referenced) connections and then also connect the WARP rig.
-- Path cannot scale when scaled from the master control
-- Check. What happens to non-keyable settings attributes? They need to get set to match the source rig.
-- Add a "bake animation" button
-- WIP: Add "add" and "remove" buttons to the GUI
-- Add a pre-check to make sure the character is referenced.
-- Add a way to run this on a non-referenced character? Is that worth it?
 """
 
 def undo(func):
@@ -38,7 +29,6 @@ def undo(func):
             # after calling the func, end the undo chunk
             cmds.undoInfo(cck=True)
     return _undofunc
-
 
 def skin_geometry(oJoints, oGeo, pName):
     """A simple skinCluster command with my preferred prefs."""
@@ -61,7 +51,7 @@ class AnimationWarping:
     def __init__(self):
         self.name = 'anim_warp_UI'
         self.title = 'Animation Warp'
-        self.version = 0.97
+        self.version = 0.98
         self.author = 'Chris Lesage - http://chrislesage.com'
         
         self.fileList = {}
@@ -178,6 +168,7 @@ class AnimationWarping:
             self.fileList['valid_allControls'] = True
             self.pick2Button.setBackgroundColor(self.blueColor)
         else:
+            #TODO: This has got to produce bugs if there are nested namespaces...
             pm.warning('Pick all your controls from a single character!')
             self.fileList['valid_allControls'] = False
         self.update_warp_color()
@@ -208,6 +199,7 @@ class AnimationWarping:
         print('add controls clicks - {}'.format(listKey))
         fileList = self.fileList[listKey]
         print(fileList.getAllItems())
+
         return False
 
         self.update_scroll_list([selectMessage], listKey)
@@ -515,30 +507,36 @@ class AnimationWarping:
             offset_vector3.getShape().localScaleZ.set(0.1)
 
             ### create a closestPoint constraint on oCurve1. Result is cpConstraintIn and cpConstraintPos nulls.
-            oClosePoint = self.create_closest_point_constraint(oName, oCurve1, oRoot)
+            clsPointIn, clsPointOut, clsPointCns = self.create_closest_point_constraint(oName, oCurve1, oRoot)
 
             ### create a pointOnCurveInfo node on oCurve2
 
             # To get twisting and loop-de-looping, use a nurbs plane. The following binds follicles to the plane. 
             #This drives the follicle, but divided by the number of spans. (The follicle goes 0 to 1.)
             oFoll = self.create_follicle(oCurve2, uPos=0.5, vPos=0.0)
+            oFoll2 = self.create_follicle(oCurve1, uPos=0.5, vPos=0.0)
             pm.rename(oFoll.getParent(), oName + 'FOLL')
+            pm.rename(oFoll2.getParent(), oName + 'FOLL2')
             pm.parent(oFoll.getParent(), oRoot)
+            pm.parent(oFoll2.getParent(), oRoot)
             oMult = pm.shadingNode('multiplyDivide', asUtility=True, name=oName + 'foll_multiply')
             #TODO: This should likely be divided by the scale of the rig. But then it never reaches the end!
             oMult.input2X.set(1)
             oMult.operation.set(2) # set to divide instead of multiply.
-            oClosePoint[2].parameterV.connect(oMult.input1X)
+            clsPointCns.parameterV.connect(oMult.input1X)
             oMult.outputX.connect(oFoll.parameterV) # the curve1 parameter is driving the follicle on the nurbs plane.
+            oFoll.parameterV.connect(oFoll2.parameterV)
             
             ### drive vector2.translate by pointOnCurveInfo.position
             pm.parentConstraint(oFoll.getParent(), vector2, w=1.0, mo=True)
 
             ### pointConstraint cpConstraintIn to EACH control
-            pm.pointConstraint(each, oClosePoint[0], w=1, mo=False)
+            pm.pointConstraint(each, clsPointIn, w=1, mo=False)
 
             ### pointConstraint vector1 to cpConstraintPos
-            pm.pointConstraint(oClosePoint[1], vector1, w=1.0, mo=False)
+            ### Correction. Constrain it to the follicle.
+            #TODO: I think by connecting the follicles, I can refactor away some of the vector locators/groups
+            pm.pointConstraint(oFoll2.getParent(), vector1, w=1.0, mo=False)
 
             ### tangent constraint vector1 to oCurve1
             #pm.tangentConstraint(oCurve1, vector1, aim=(0,0,1)) # in theory this doesn't need an upvector because source path stays in place.
