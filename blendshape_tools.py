@@ -1,3 +1,4 @@
+
 #!/usr/bin/env mayapy
 # encoding: utf-8
 
@@ -117,13 +118,6 @@ class RigmaroleBlendshapeTools(object):
         self.create_ui()
     
     def create_options(self):
-        # create a node to hold option attributes in your scene.
-        # An optionVar would try to remember settings between different scenes.
-        # Attributes will remain even when you come back to a rig later.
-        if pm.objExists('rigmarole_blendshape_tools'):
-            self.optionsNode = pm.PyNode('rigmarole_blendshape_tools')
-        else:
-            self.optionsNode = pm.group(em=True, n='rigmarole_blendshape_tools')
         #TODO: Set up a serializer to set and get the options dictionary on the optionsNode
         self.buttons = {}
         self.options = {}
